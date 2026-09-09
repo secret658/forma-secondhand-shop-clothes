@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Корзина - Archive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap cart-page">
+  <h1>Корзина</h1>
+
+  <div id="cart-list" class="cart-list">Пусто</div>
+
+  <div class="cart-summary" id="cart-summary" style="display:none">
+    <div class="field-row">
+      <input id="promo-code" placeholder="промокод">
+      <button class="btn-outline" onclick="previewCart()">Применить</button>
+    </div>
+    <div id="cart-preview" class="cart-preview"></div>
+    <button class="btn-solid full" onclick="placeOrder()">Оформить заказ</button>
+  </div>
+
+  <div id="order-result" class="order-result" style="display:none">
+    <h2>Заказ оформлен</h2>
+    <p class="muted">Скопируй текст ниже и отправь нашему менеджеру - он свяжется с тобой и организует доставку.</p>
+    <textarea id="order-message" class="order-message" readonly></textarea>
+    <div class="field-row">
+      <button class="btn-outline" onclick="copyOrderMessage()">Скопировать текст</button>
+      <a id="telegram-link" class="btn-solid" href="#" target="_blank">Написать в Telegram</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">forma - интернет секонд хенд с невероятными вещами</div>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+let lastPreview = null;
+
+async function init() {
+  await renderHeader();
+  renderCart();
+}
+
+function renderCart() {
+  const cart = getCart();
+  const listEl = document.getElementById("cart-list");
+  const summaryEl = document.getElementById("cart-summary");
+
+  if (cart.length === 0) {
+    listEl.innerHTML = `<div class="muted">Корзина пуста. <a href="index.html">Вернуться в каталог</a></div>`;
+    summaryEl.style.display = "none";
+    return;
+  }
+
+  summaryEl.style.display = "flex";
+  listEl.innerHTML = cart.map(i => `
+    <div class="cart-row">
+      <span class="cart-row-name">${escapeHtml(i.name)}</span>
+      <div class="cart-row-qty">
+        <button class="qty-btn" onclick="changeQty(${i.product_id}, ${i.quantity - 1})">−</button>
+        <span>${i.quantity}</span>
+        <button class="qty-btn" onclick="changeQty(${i.product_id}, ${i.quantity + 1})">+</button>
+      </div>
+      <span class="cart-row-price">${i.price * i.quantity} ₽</span>
+      <button class="btn-text" onclick="changeQty(${i.product_id}, 0)">убрать</button>
+    </div>
+  `).join("");
+}
+
+function changeQty(productId, quantity) {
+  updateCartQuantity(productId, quantity);
+  renderCart();
+  document.getElementById("cart-preview").innerHTML = "";
+}
+
+async function previewCart() {
+  const cart = getCart();
+  if (cart.length === 0) return;
+  try {
+    const body = {
+      items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+      promo_code: document.getElementById("promo-code").value.trim() || null,
+    };
+    lastPreview = await api("/cart/preview", { method: "POST", body: JSON.stringify(body) });
+    document.getElementById("cart-preview").innerHTML = `
+      Сумма: ${lastPreview.subtotal} ₽<br>
+      Скидка: ${lastPreview.discount_amount} ₽<br>
+      <b>Итого: ${lastPreview.total} ₽</b><br>
+      ${lastPreview.message ? `<span class="muted">${lastPreview.message}</span>` : ""}
+    `;
+  } catch (e) { toast(e.message, true); }
+}
+
+async function placeOrder() {
+  if (!token) { toast("Сначала войдите", true); return; }
+  const cart = getCart();
+  if (cart.length === 0) return;
+
+  try {
+    const body = { items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })) };
+    const order = await api("/orders/", { method: "POST", body: JSON.stringify(body) });
+
+    const lines = cart.map(i =>
+      `Артикул: #${i.product_id}\nТовар: ${i.name}\nКоличество: ${i.quantity}`
+    );
+    const total = lastPreview ? lastPreview.total : cart.reduce((s, i) => s + i.price * i.quantity, 0);
+    const promo = document.getElementById("promo-code").value.trim();
+
+    const message = [
+      `Заказ №${order.id}:`,
+      "",
+      lines.join("\n\n"),
+      "",
+      promo ? `Промокод: ${promo}` : null,
+      `Итого: ${total} ₽`,
+      "",
+      `Менеджер: @${getManagerUsername()}`,
+      `Отправьте это сообщение нашему менеджеру в Telegram, чтобы оформить доставку.`,
+    ].filter(line => line !== null).join("\n");
+
+    document.getElementById("order-message").value = message;
+    document.getElementById("telegram-link").href = `https://t.me/${getManagerUsername()}`;
+    document.getElementById("order-result").style.display = "block";
+    document.getElementById("cart-summary").style.display = "none";
+
+    saveCart([]);
+    document.getElementById("cart-list").innerHTML = "";
+    toast("Заказ создан");
+  } catch (e) { toast(e.message, true); }
+}
+
+function copyOrderMessage() {
+  const textarea = document.getElementById("order-message");
+  textarea.select();
+  navigator.clipboard.writeText(textarea.value).then(() => toast("Скопировано"));
+}
+
+init();
+</script>
+</body>
+</html>

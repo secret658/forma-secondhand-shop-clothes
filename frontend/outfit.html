@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Собрать образ - forma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap outfit-page">
+  <h1>Собрать образ</h1>
+  <div id="need-login" class="muted" style="display:none">Войдите и лайкните пару вещей, чтобы начать собирать образ. <a href="login.html">Войти</a></div>
+
+  <div id="builder" style="display:none">
+    <div class="outfit-layout">
+
+      <div class="outfit-panel">
+        <h3>Избранное</h3>
+        <div id="thumbs" class="outfit-thumbs">Загрузка…</div>
+      </div>
+
+      <div class="outfit-canvas-wrap">
+        <div class="outfit-canvas" id="canvas"></div>
+        <div class="outfit-controls">
+          <button class="btn-outline" onclick="clearCanvas()">Очистить</button>
+          <button class="btn-solid" onclick="saveOutfit()">Сохранить образ</button>
+        </div>
+      </div>
+
+      <div class="outfit-panel">
+        <h3>Мои образы</h3>
+        <div id="saved-list" class="outfit-saved-list"></div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">forma - интернет секонд хенд с невероятными вещами</div>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+let canvasItems = []; // { id, url, x, y, width, height, zIndex }
+let nextZIndex = 1;
+let selectedId = null;
+let idCounter = 0;
+
+async function init() {
+  const user = await renderHeader();
+  if (!user) {
+    document.getElementById("need-login").style.display = "block";
+    return;
+  }
+  document.getElementById("builder").style.display = "block";
+  await loadThumbs();
+  renderSavedList();
+}
+
+async function loadThumbs() {
+  try {
+    const products = await api("/products/liked");
+    const container = document.getElementById("thumbs");
+    if (products.length === 0) {
+      container.innerHTML = `<div class="muted">Пока нет лайкнутых вещей. <a href="index.html">В каталог</a></div>`;
+      return;
+    }
+    container.innerHTML = products.map(p => `
+      <div class="outfit-thumb" onclick="addToCanvas('${p.image_url || ''}', '${escapeHtml(p.name)}')">
+        ${p.image_url ? `<img src="${p.image_url}">` : `<div class="no-photo" style="width:40px;height:40px"></div>`}
+        <span>${escapeHtml(p.name)}</span>
+      </div>
+    `).join("");
+  } catch (e) { toast(e.message, true); }
+}
+
+function addToCanvas(url, name) {
+  if (!url) { toast("У этого товара нет фото", true); return; }
+  const item = {
+    id: `item-${idCounter++}`,
+    url,
+    x: 160,
+    y: 200,
+    width: 160,
+    height: 160,
+    zIndex: nextZIndex++,
+  };
+  canvasItems.push(item);
+  renderCanvas();
+  selectItem(item.id);
+}
+
+function renderCanvas() {
+  const canvas = document.getElementById("canvas");
+  canvas.innerHTML = canvasItems.map(item => `
+    <div class="outfit-item ${item.id === selectedId ? 'selected' : ''}"
+         id="${item.id}"
+         style="left:${item.x}px; top:${item.y}px; width:${item.width}px; height:${item.height}px; z-index:${item.zIndex}">
+      <img src="${item.url}" draggable="false" onpointerdown="onItemPointerDown(event, '${item.id}')">
+      <div class="outfit-resize-handle" onpointerdown="onResizePointerDown(event, '${item.id}')"></div>
+      <button class="outfit-item-remove" onpointerdown="removeItem(event, '${item.id}')">×</button>
+    </div>
+  `).join("");
+}
+
+function selectItem(id) {
+  selectedId = id;
+  const item = canvasItems.find(i => i.id === id);
+  if (item) item.zIndex = nextZIndex++;
+  renderCanvas();
+}
+
+function removeItem(e, id) {
+  e.stopPropagation();
+  e.preventDefault();
+  canvasItems = canvasItems.filter(i => i.id !== id);
+  selectedId = null;
+  renderCanvas();
+}
+
+function clearCanvas() {
+  canvasItems = [];
+  selectedId = null;
+  renderCanvas();
+}
+
+// ---------- drag ----------
+
+let dragState = null;
+
+function onItemPointerDown(e, id) {
+  selectItem(id);
+  const item = canvasItems.find(i => i.id === id);
+  dragState = {
+    id,
+    startX: e.clientX,
+    startY: e.clientY,
+    origX: item.x,
+    origY: item.y,
+  };
+  document.addEventListener("pointermove", onDragMove);
+  document.addEventListener("pointerup", onDragEnd);
+}
+
+function onDragMove(e) {
+  if (!dragState) return;
+  const item = canvasItems.find(i => i.id === dragState.id);
+  if (!item) return;
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  item.x = dragState.origX + dx;
+  item.y = dragState.origY + dy;
+  renderCanvas();
+}
+
+function onDragEnd() {
+  dragState = null;
+  document.removeEventListener("pointermove", onDragMove);
+  document.removeEventListener("pointerup", onDragEnd);
+}
+
+// ---------- resize ----------
+
+let resizeState = null;
+
+function onResizePointerDown(e, id) {
+  e.stopPropagation();
+  selectItem(id);
+  const item = canvasItems.find(i => i.id === id);
+  resizeState = {
+    id,
+    startX: e.clientX,
+    startY: e.clientY,
+    origWidth: item.width,
+    origHeight: item.height,
+  };
+  document.addEventListener("pointermove", onResizeMove);
+  document.addEventListener("pointerup", onResizeEnd);
+}
+
+function onResizeMove(e) {
+  if (!resizeState) return;
+  const item = canvasItems.find(i => i.id === resizeState.id);
+  if (!item) return;
+  const dx = e.clientX - resizeState.startX;
+  //ресайз пропорциональный, тянем только по X, высоту считаем от того же соотношения
+  const ratio = resizeState.origHeight / resizeState.origWidth;
+  const newWidth = Math.max(40, resizeState.origWidth + dx);
+  item.width = newWidth;
+  item.height = newWidth * ratio;
+  renderCanvas();
+}
+
+function onResizeEnd() {
+  resizeState = null;
+  document.removeEventListener("pointermove", onResizeMove);
+  document.removeEventListener("pointerup", onResizeEnd);
+}
+
+// ---------- save / load ----------
+
+function getSavedOutfits() {
+  try {
+    return JSON.parse(localStorage.getItem("outfits") || "[]");
+  } catch { return []; }
+}
+
+function saveOutfit() {
+  if (canvasItems.length === 0) { toast("Холст пуст", true); return; }
+  const name = prompt("Название образа:", "Мой образ");
+  if (!name) return;
+
+  const outfits = getSavedOutfits();
+  outfits.push({ id: Date.now(), name, items: canvasItems });
+  localStorage.setItem("outfits", JSON.stringify(outfits));
+  toast("Образ сохранен");
+  renderSavedList();
+}
+
+function renderSavedList() {
+  const outfits = getSavedOutfits();
+  const container = document.getElementById("saved-list");
+  if (outfits.length === 0) {
+    container.innerHTML = `<div class="muted" style="font-size:12px">Пока нет сохраненных</div>`;
+    return;
+  }
+  container.innerHTML = outfits.map(o => `
+    <div class="outfit-saved-item">
+      <span onclick="loadOutfit(${o.id})" style="cursor:pointer">${escapeHtml(o.name)}</span>
+      <button class="btn-text" onclick="deleteOutfit(${o.id})">×</button>
+    </div>
+  `).join("");
+}
+
+function loadOutfit(id) {
+  const outfits = getSavedOutfits();
+  const outfit = outfits.find(o => o.id === id);
+  if (!outfit) return;
+  canvasItems = outfit.items.map(i => ({ ...i }));
+  idCounter = canvasItems.length;
+  nextZIndex = Math.max(1, ...canvasItems.map(i => i.zIndex)) + 1;
+  selectedId = null;
+  renderCanvas();
+  toast(`Образ «${outfit.name}» загружен`);
+}
+
+function deleteOutfit(id) {
+  const outfits = getSavedOutfits().filter(o => o.id !== id);
+  localStorage.setItem("outfits", JSON.stringify(outfits));
+  renderSavedList();
+}
+
+init();
+</script>
+</body>
+</html>

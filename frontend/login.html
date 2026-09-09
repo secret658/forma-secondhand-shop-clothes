@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вход - forma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap auth-page">
+  <div class="auth-card">
+    <h1>Вход в аккаунт</h1>
+    <p class="muted">Войдите или зарегистрируйтесь, чтобы оформлять заказы и ставить лайки.</p>
+
+    <div class="field-stack">
+      <input id="auth-email" type="email" placeholder="email">
+      <input id="auth-password" type="password" placeholder="пароль (буквы + цифры, 8+ символов)">
+      <div class="field-row">
+        <button class="btn-solid full" onclick="login()">Войти</button>
+        <button class="btn-outline full" onclick="register()">Регистрация</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+async function register() {
+  try {
+    const email = document.getElementById("auth-email").value;
+    const password = document.getElementById("auth-password").value;
+    await api("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
+    toast("Аккаунт создан, входим");
+    await login();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function login() {
+  try {
+    const email = document.getElementById("auth-email").value;
+    const password = document.getElementById("auth-password").value;
+    const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    token = data.access_token;
+    localStorage.setItem("token", token);
+    toast("Добро пожаловать");
+    window.location.href = "index.html";
+  } catch (e) { toast(e.message, true); }
+}
+
+renderHeader();
+</script>
+</body>
+</html>

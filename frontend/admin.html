@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админка - Archive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap admin-page">
+  <h1>Админка</h1>
+  <div id="not-admin" class="muted" style="display:none">У вас нет прав администратора.</div>
+
+  <div id="admin-content" style="display:none">
+
+    <section class="admin-section">
+      <h2>Настройки</h2>
+      <div class="admin-card">
+        <h3>Telegram менеджера</h3>
+        <p class="muted">Username без @, куда покупатели будут писать после оформления заказа.</p>
+        <div class="field-row">
+          <input id="manager-username" placeholder="username">
+          <button class="btn-solid" onclick="saveManagerUsername()">Сохранить</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Каталог</h2>
+      <div class="admin-grid">
+        <div class="admin-card">
+          <h3>Новая категория</h3>
+          <div class="field-row">
+            <input id="cat-name" placeholder="Название">
+            <button class="btn-solid" onclick="createCategory()">Добавить</button>
+          </div>
+        </div>
+        <div class="admin-card">
+          <h3>Новый товар</h3>
+          <div class="field-stack">
+            <input id="prod-name" placeholder="Название">
+            <div class="field-row">
+              <input id="prod-price" placeholder="Цена, ₽" type="number">
+              <input id="prod-stock" placeholder="Остаток" type="number">
+            </div>
+            <select id="prod-category"></select>
+            <div class="field-stack">
+              <label class="muted" style="font-size:12px">Фото товара (можно несколько)</label>
+              <input id="prod-image-file" type="file" accept=".jpg,.jpeg,.png,.webp" multiple>
+              <div id="prod-image-preview"></div>
+            </div>
+            <textarea id="prod-description" placeholder="Описание (необязательно)" rows="2"></textarea>
+            <button class="btn-solid" onclick="createProduct()">Добавить товар</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Категории</h2>
+      <table class="admin-table" id="categories-table"></table>
+    </section>
+
+    <section class="admin-section">
+      <h2>Товары <span class="muted">(артикул виден в первой колонке)</span></h2>
+      <table class="admin-table" id="products-table"></table>
+    </section>
+
+    <section class="admin-section">
+      <h2>Заказы</h2>
+      <table class="admin-table" id="orders-table"></table>
+    </section>
+
+    <section class="admin-section">
+      <h2>Статистика</h2>
+      <button class="btn-outline" onclick="loadDashboard()">Обновить</button>
+      <pre id="dashboard-output" class="dashboard-output"></pre>
+    </section>
+
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+let categories = [];
+let selectedFiles = [];
+
+async function init() {
+  const user = await renderHeader();
+  if (!user || user.role !== "admin") {
+    document.getElementById("not-admin").style.display = "block";
+    return;
+  }
+  document.getElementById("admin-content").style.display = "block";
+  document.getElementById("manager-username").value = getManagerUsername();
+
+  document.getElementById("prod-image-file").addEventListener("change", (e) => {
+    selectedFiles = selectedFiles.concat(Array.from(e.target.files));
+    e.target.value = "";
+    renderImagePreview();
+  });
+
+  await loadCategories();
+  await loadCategoriesTable();
+  await loadProductsTable();
+  await loadOrdersTable();
+}
+
+function saveManagerUsername() {
+  const value = document.getElementById("manager-username").value.trim();
+  if (!value) return;
+  setManagerUsername(value);
+  toast("Сохранено");
+}
+
+async function loadCategories() {
+  categories = await api("/categories/");
+  const select = document.getElementById("prod-category");
+  select.innerHTML = categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+}
+
+async function createCategory() {
+  try {
+    const name = document.getElementById("cat-name").value.trim();
+    if (!name) return;
+    await api("/categories/", { method: "POST", body: JSON.stringify({ name, discount_percent: 0 }) });
+    document.getElementById("cat-name").value = "";
+    toast("Категория добавлена");
+    await loadCategories();
+    await loadCategoriesTable();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadCategoriesTable() {
+  const list = await api("/categories/");
+  const table = document.getElementById("categories-table");
+  if (list.length === 0) {
+    table.innerHTML = `<tr><td class="muted">Пока нет категорий</td></tr>`;
+    return;
+  }
+  table.innerHTML = `
+    <tr><th>ID</th><th>Название</th><th></th></tr>
+    ${list.map(c => `
+      <tr>
+        <td>#${c.id}</td>
+        <td>${escapeHtml(c.name)}</td>
+        <td><button class="btn-text" onclick="deleteCategory(${c.id})">удалить</button></td>
+      </tr>
+    `).join("")}
+  `;
+}
+
+async function deleteCategory(categoryId) {
+  if (!confirm("Удалить категорию?")) return;
+  try {
+    await api(`/admin/categories/${categoryId}`, { method: "DELETE" });
+    toast("Категория удалена");
+    await loadCategories();
+    await loadCategoriesTable();
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderImagePreview() {
+  const preview = document.getElementById("prod-image-preview");
+  preview.innerHTML = selectedFiles.map((file, i) => {
+    const url = URL.createObjectURL(file);
+    return `
+      <div style="position:relative; display:inline-block; margin:6px 6px 0 0">
+        <img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:4px">
+        <button onclick="removeSelectedFile(${i})" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#c0392b;color:#fff;border:none;font-size:11px;cursor:pointer;padding:0">×</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function removeSelectedFile(index) {
+  selectedFiles.splice(index, 1);
+  renderImagePreview();
+}
+
+async function createProduct() {
+  try {
+    const files = selectedFiles;
+
+    const body = {
+      name: document.getElementById("prod-name").value.trim(),
+      price: parseFloat(document.getElementById("prod-price").value),
+      stock_quantity: parseInt(document.getElementById("prod-stock").value) || 0,
+      category_id: parseInt(document.getElementById("prod-category").value),
+      image_url: null,
+      description: document.getElementById("prod-description").value.trim() || null,
+    };
+    if (!body.name || !body.price || !body.category_id) {
+      toast("Заполни название, цену и категорию", true);
+      return;
+    }
+
+    const product = await api("/products/", { method: "POST", body: JSON.stringify(body) });
+
+    if (files.length > 0) {
+      const images = await uploadProductImages(product.id, files);
+      //первое загруженное фото становится обложкой товара, показывается в каталоге
+      await api(`/admin/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ image_url: images[0].url.startsWith("http") ? images[0].url : API + images[0].url }),
+      });
+    }
+
+    document.getElementById("prod-name").value = "";
+    document.getElementById("prod-price").value = "";
+    document.getElementById("prod-stock").value = "";
+    selectedFiles = [];
+    document.getElementById("prod-image-preview").innerHTML = "";
+    document.getElementById("prod-description").value = "";
+    toast("Товар добавлен");
+    await loadProductsTable();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function uploadProductImages(productId, files) {
+  const formData = new FormData();
+  files.forEach(file => formData.append("files", file));
+  const res = await fetch(`${API}/admin/products/${productId}/images`, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + token },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Ошибка загрузки фото");
+  //бэкенд отдает относительные пути, добавляем API-хост чтобы картинки открывались с любой страницы
+  return data.map(img => ({ ...img, url: API + img.url }));
+}
+
+async function loadProductsTable() {
+  const products = await api("/products/");
+  const table = document.getElementById("products-table");
+  table.innerHTML = `
+    <tr><th>ID</th><th>Название</th><th>Цена</th><th>Остаток</th><th>Лайки</th><th></th></tr>
+    ${products.map(p => `
+      <tr>
+        <td>#${p.id}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${p.price} ₽</td>
+        <td>${p.stock_quantity}</td>
+        <td>${p.likes_count}</td>
+        <td><button class="btn-text" onclick="deleteProduct(${p.id})">удалить</button></td>
+      </tr>
+    `).join("")}
+  `;
+}
+
+async function deleteProduct(productId) {
+  if (!confirm("Удалить товар?")) return;
+  try {
+    await api(`/admin/products/${productId}`, { method: "DELETE" });
+    toast("Товар удален");
+    await loadProductsTable();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadOrdersTable() {
+  try {
+    const orders = await api("/admin/orders");
+    const table = document.getElementById("orders-table");
+    if (orders.length === 0) {
+      table.innerHTML = `<tr><td class="muted">Заказов пока нет</td></tr>`;
+      return;
+    }
+    table.innerHTML = `
+      <tr><th>ID</th><th>Юзер</th><th>Товары</th><th>Дата</th></tr>
+      ${orders.map(o => `
+        <tr>
+          <td>#${o.id}</td>
+          <td>user #${o.user_id}</td>
+          <td>${o.items.map(i => `#${i.product_id} × ${i.quantity}`).join(", ")}</td>
+          <td>${new Date(o.created_at).toLocaleString("ru")}</td>
+        </tr>
+      `).join("")}
+    `;
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadDashboard() {
+  try {
+    const data = await api("/admin/dashboard");
+    document.getElementById("dashboard-output").textContent = JSON.stringify(data, null, 2);
+  } catch (e) { toast(e.message, true); }
+}
+
+init();
+</script>
+</body>
+</html>

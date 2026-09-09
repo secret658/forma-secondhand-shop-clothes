@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>forma - винтажная одежда</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1>Вещи с историей,<br>не с ценником сезона.</h1>
+      <p class="hero-sub">Отобранные вручную архивные вещи - джинсы, куртки, кофты. Каждая - с прошлым, каждая - на годы вперёд.</p>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><span class="stat-num" id="stat-products">-</span><span class="stat-label">вещей в наличии</span></div>
+      <div class="stat"><span class="stat-num" id="stat-categories">-</span><span class="stat-label">категории</span></div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <section class="catalog">
+    <div class="catalog-head">
+      <h2>Каталог</h2>
+      <div class="filter-row" id="category-filters"></div>
+    </div>
+    <div class="products" id="products"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">forma - интернет секонд хенд с невероятными вещами</div>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+let categories = [];
+let allProducts = [];
+let activeCategory = null;
+let likedIds = new Set();
+
+async function init() {
+  await renderHeader();
+  try {
+    if (token) {
+      const liked = await api("/products/liked");
+      likedIds = new Set(liked.map(p => p.id));
+    }
+    await loadCategories();
+    await loadProducts();
+  } catch (e) {
+    document.getElementById("products").innerHTML = `<div class="muted">Не удалось загрузить каталог: ${e.message}</div>`;
+  }
+}
+
+async function loadCategories() {
+  categories = await api("/categories/");
+  document.getElementById("stat-categories").textContent = categories.length;
+
+  const filters = document.getElementById("category-filters");
+  filters.innerHTML =
+    `<div class="filter-pill ${activeCategory === null ? 'active' : ''}" onclick="setFilter(null)">Все</div>` +
+    categories.map(c => `<div class="filter-pill ${activeCategory === c.id ? 'active' : ''}" onclick="setFilter(${c.id})">${escapeHtml(c.name)}</div>`).join("");
+}
+
+function setFilter(categoryId) {
+  activeCategory = categoryId;
+  loadCategories();
+  renderProducts();
+}
+
+async function loadProducts() {
+  allProducts = await api("/products/");
+  document.getElementById("stat-products").textContent = allProducts.length;
+  renderProducts();
+}
+
+function renderProducts() {
+  const container = document.getElementById("products");
+  const list = activeCategory === null ? allProducts : allProducts.filter(p => p.category_id === activeCategory);
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="muted">В этой категории пока пусто.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(p => `
+    <a class="product-card" href="product.html?id=${p.id}" onclick="return requireLoginToOpen(event)">
+      <div class="product-image">
+        ${p.image_url
+          ? `<img src="${p.image_url}" alt="${escapeHtml(p.name)}" onerror="this.style.display='none'">`
+          : `<div class="no-photo">без фото</div>`}
+        <button class="like-heart ${likedIds.has(p.id) ? 'liked' : ''}" onclick="event.preventDefault(); toggleLike(${p.id})">♥</button>
+      </div>
+      <div class="product-name">${escapeHtml(p.name)}</div>
+      <div class="product-meta">
+        <span class="product-price">${p.price} ₽</span>
+        <span class="muted">${p.stock_quantity} шт</span>
+      </div>
+      <div class="like-count">${p.likes_count} ${likeWord(p.likes_count)}</div>
+    </a>
+  `).join("");
+}
+
+function requireLoginToOpen(e) {
+  //каталог виден всем, но открыть карточку конкретного товара можно только залогиненным
+  if (!token) {
+    e.preventDefault();
+    toast("Войдите, чтобы посмотреть товар");
+    window.location.href = "login.html";
+    return false;
+  }
+  return true;
+}
+
+function likeWord(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "лайк";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "лайка";
+  return "лайков";
+}
+
+async function toggleLike(productId) {
+  if (!token) { toast("Сначала войдите", true); return; }
+  try {
+    const result = await api(`/products/${productId}/like`, { method: "POST" });
+    if (result.liked) likedIds.add(productId);
+    else likedIds.delete(productId);
+    const product = allProducts.find(p => p.id === productId);
+    if (product) product.likes_count = result.likes_count;
+    renderProducts();
+  } catch (e) { toast(e.message, true); }
+}
+
+init();
+</script>
+</body>
+</html>

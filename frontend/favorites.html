@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Избранное - Archive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap">
+  <section class="catalog">
+    <div class="catalog-head">
+      <h2>Избранное</h2>
+    </div>
+    <div class="products" id="products"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">forma - интернет секонд хенд с невероятными вещами</div>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+async function init() {
+  const user = await renderHeader();
+  if (!user) {
+    document.getElementById("products").innerHTML = `<div class="muted">Войдите, чтобы видеть избранное. <a href="login.html">Войти</a></div>`;
+    return;
+  }
+  await loadLiked();
+}
+
+async function loadLiked() {
+  try {
+    const products = await api("/products/liked");
+    renderProducts(products);
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderProducts(list) {
+  const container = document.getElementById("products");
+  if (list.length === 0) {
+    container.innerHTML = `<div class="muted">Пока ничего не лайкнуто. <a href="index.html">В каталог</a></div>`;
+    return;
+  }
+  container.innerHTML = list.map(p => `
+    <a class="product-card" href="product.html?id=${p.id}">
+      <div class="product-image">
+        ${p.image_url
+          ? `<img src="${p.image_url}" alt="${escapeHtml(p.name)}" onerror="this.style.display='none'">`
+          : `<div class="no-photo">без фото</div>`}
+        <button class="like-heart liked" onclick="event.preventDefault(); toggleLike(${p.id})">♥</button>
+      </div>
+      <div class="product-name">${escapeHtml(p.name)}</div>
+      <div class="product-meta">
+        <span class="product-price">${p.price} ₽</span>
+        <span class="muted">${p.stock_quantity} шт</span>
+      </div>
+    </a>
+  `).join("");
+}
+
+async function toggleLike(productId) {
+  try {
+    await api(`/products/${productId}/like`, { method: "POST" });
+    await loadLiked();
+    //снятие лайка тут же убирает товар со страницы избранного
+  } catch (e) { toast(e.message, true); }
+}
+
+init();
+</script>
+</body>
+</html>

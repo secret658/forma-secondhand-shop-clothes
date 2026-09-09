@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Товар - forma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<main class="wrap product-page">
+  <a href="index.html" class="btn-text back-link">← Назад в каталог</a>
+  <div id="product-content" class="product-detail">Загрузка…</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">forma - интернет секонд хенд с невероятными вещами</div>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared.js"></script>
+<script>
+const productId = new URLSearchParams(window.location.search).get("id");
+let currentProduct = null;
+let currentGallery = [];
+let currentSlide = 0;
+let isLiked = false;
+
+async function init() {
+  const user = await renderHeader();
+  if (!user) {
+    document.getElementById("product-content").innerHTML = `<div class="muted">Войдите, чтобы посмотреть товар. <a href="login.html">Войти</a></div>`;
+    return;
+  }
+  if (!productId) {
+    document.getElementById("product-content").innerHTML = `<div class="muted">Товар не найден.</div>`;
+    return;
+  }
+  try {
+    const liked = await api("/products/liked");
+    isLiked = liked.some(p => p.id === parseInt(productId));
+  } catch {}
+  await loadProduct();
+}
+
+async function loadProduct() {
+  try {
+    currentProduct = await api(`/products/${productId}`);
+    render();
+  } catch (e) {
+    document.getElementById("product-content").innerHTML = `<div class="muted">Товар не найден.</div>`;
+  }
+}
+
+function render() {
+  const p = currentProduct;
+  document.title = p.name + " - forma";
+
+  const gallery = p.images && p.images.length > 0
+    ? p.images
+    : (p.image_url ? [{ url: p.image_url }] : []);
+
+  currentGallery = gallery;
+  currentSlide = 0;
+
+  document.getElementById("product-content").innerHTML = `
+    <div class="product-detail-grid">
+      <div class="product-detail-image">
+        <div id="gallery-slide">${renderSlide()}</div>
+        ${gallery.length > 1 ? `
+          <button class="gallery-arrow gallery-arrow-left" onclick="prevSlide()">‹</button>
+          <button class="gallery-arrow gallery-arrow-right" onclick="nextSlide()">›</button>
+          <div class="gallery-dots" id="gallery-dots">${renderDots()}</div>
+        ` : ""}
+      </div>
+      <div class="product-detail-info">
+        <h1>${escapeHtml(p.name)}</h1>
+        <div class="product-detail-price">${p.price} ₽</div>
+        ${p.description ? `<p class="product-detail-desc">${escapeHtml(p.description)}</p>` : ""}
+        <div class="product-detail-meta">
+          <span class="muted">В наличии: ${p.stock_quantity} шт</span>
+          <button class="like-heart-inline ${isLiked ? 'liked' : ''}" onclick="toggleLike()">♥ ${p.likes_count} ${likeWord(p.likes_count)}</button>
+        </div>
+        <button class="btn-solid full" ${p.stock_quantity === 0 ? "disabled" : ""} onclick="addProductToCart()">
+          ${p.stock_quantity === 0 ? "Нет в наличии" : "Добавить в корзину"}
+        </button>
+        <div class="muted product-id-hint">артикул #${p.id}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSlide() {
+  if (currentGallery.length === 0) return `<div class="no-photo">без фото</div>`;
+  const img = currentGallery[currentSlide];
+  const url = img.url.startsWith("http") ? img.url : API + img.url;
+  return `<img src="${url}" alt="" onerror="this.style.display='none'">`;
+}
+
+function renderDots() {
+  return currentGallery.map((_, i) =>
+    `<span class="gallery-dot ${i === currentSlide ? 'active' : ''}" onclick="goToSlide(${i})"></span>`
+  ).join("");
+}
+
+function goToSlide(i) {
+  currentSlide = i;
+  document.getElementById("gallery-slide").innerHTML = renderSlide();
+  document.getElementById("gallery-dots").innerHTML = renderDots();
+}
+
+function nextSlide() { goToSlide((currentSlide + 1) % currentGallery.length); }
+function prevSlide() { goToSlide((currentSlide - 1 + currentGallery.length) % currentGallery.length); }
+
+function likeWord(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "лайк";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "лайка";
+  return "лайков";
+}
+
+async function toggleLike() {
+  if (!token) { toast("Сначала войдите", true); return; }
+  try {
+    const result = await api(`/products/${productId}/like`, { method: "POST" });
+    isLiked = result.liked;
+    currentProduct.likes_count = result.likes_count;
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+
+function addProductToCart() {
+  addToCart(currentProduct.id, currentProduct.name, currentProduct.price);
+}
+
+init();
+</script>
+</body>
+</html>
