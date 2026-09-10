@@ -2,6 +2,8 @@
 
 Full-stack e-commerce платформа для продажи винтажной/секонд-хенд одежды. Учебный pet-проект, сделан с нуля для портфолио.
 
+![alt text](image.png)
+
 ## Стек
 
 **Backend:** Python, FastAPI, SQLAlchemy, MySQL, Docker
