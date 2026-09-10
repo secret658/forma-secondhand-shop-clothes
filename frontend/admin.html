@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Админка - Archive</title>
+<title>Админка — Archive</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -265,6 +265,20 @@ async function deleteProduct(productId) {
   } catch (e) { toast(e.message, true); }
 }
 
+const STATUS_LABELS = {
+  created: "Создан",
+  processing: "Обрабатывается",
+  shipping: "В пути",
+  completed: "Выполнен",
+};
+
+const STATUS_COLORS = {
+  created: "#d9b84a",
+  processing: "#d9b84a",
+  shipping: "#d9b84a",
+  completed: "#3fa35f",
+};
+
 async function loadOrdersTable() {
   try {
     const orders = await api("/admin/orders");
@@ -274,17 +288,40 @@ async function loadOrdersTable() {
       return;
     }
     table.innerHTML = `
-      <tr><th>ID</th><th>Юзер</th><th>Товары</th><th>Дата</th></tr>
+      <tr><th>ID</th><th>Юзер</th><th>Товары</th><th>Дата</th><th>Статус</th></tr>
       ${orders.map(o => `
         <tr>
           <td>#${o.id}</td>
           <td>user #${o.user_id}</td>
           <td>${o.items.map(i => `#${i.product_id} × ${i.quantity}`).join(", ")}</td>
           <td>${new Date(o.created_at).toLocaleString("ru")}</td>
+          <td>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${STATUS_COLORS[o.status]};margin-right:6px;vertical-align:middle"></span>
+            <select onchange="changeOrderStatus(${o.id}, this.value)" style="font-size:12px;padding:4px 6px">
+              ${Object.entries(STATUS_LABELS).map(([value, label]) =>
+                `<option value="${value}" ${o.status === value ? "selected" : ""}>${label}</option>`
+              ).join("")}
+            </select>
+          </td>
         </tr>
       `).join("")}
     `;
   } catch (e) { toast(e.message, true); }
+}
+
+async function changeOrderStatus(orderId, newStatus) {
+  try {
+    await api(`/admin/orders/${orderId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status: newStatus }),
+    });
+    toast("Статус обновлен");
+    await loadOrdersTable();
+  } catch (e) {
+    toast(e.message, true);
+    await loadOrdersTable();
+    //перезагружаем таблицу чтобы вернуть select к реальному статусу, если запрос не прошел
+  }
 }
 
 async function loadDashboard() {
