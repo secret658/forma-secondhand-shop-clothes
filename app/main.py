@@ -39,9 +39,9 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    #allow_origin_regex ловит любой поддомен vercel.app - продакшн и превью-деплои сразу,
-    #без этого пришлось бы вручную вписывать сюда точный URL после каждого деплоя
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    #allow_origin_regex ловит любой поддомен netlify.app - и продакшн, и deploy preview ссылки
+    #(они выглядят как https://<hash>--<site-name>.netlify.app)
+    allow_origin_regex=r"https://.*\.netlify\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
