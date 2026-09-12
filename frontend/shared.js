@@ -119,7 +119,7 @@ async function renderHeader() {
 
   container.innerHTML = `
     <div class="wrap header-row">
-      <a href="index.html" class="wordmark">Archive</a>
+      <a href="index.html" class="wordmark">Forma</a>
       <nav class="account-nav">
         ${isAdmin ? `<a href="admin.html" class="btn-text">Админка</a>` : ""}
         ${user ? `<a href="favorites.html" class="btn-text">Избранное</a>` : ""}
