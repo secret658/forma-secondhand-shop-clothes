@@ -23,8 +23,6 @@ from app.limiter import limiter
 Base.metadata.create_all(bind=engine)
 
 os.makedirs("uploads", exist_ok=True)
-#папка для загруженных фото товаров
-#bind mount в docker-compose (.:/code) значит файлы реально сохранятся на диске хоста
 
 app = FastAPI(
     title="Archive Clothing API",
@@ -35,19 +33,21 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-#раздает файлы из uploads/ напрямую по адресу /uploads/имя_файла.jpg
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*"])
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    #allow_origin_regex ловит любой поддомен vercel.app - продакшн и превью-деплои сразу,
+    #без этого пришлось бы вручную вписывать сюда точный URL после каждого деплоя
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
-MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB, подняли лимит из-за загрузки фото
+MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 @app.middleware("http")
